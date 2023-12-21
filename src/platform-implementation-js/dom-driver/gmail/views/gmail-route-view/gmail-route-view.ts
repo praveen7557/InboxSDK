@@ -20,6 +20,10 @@ import { simulateClick } from '../../../../lib/dom/simulate-mouse-event';
 import querySelector from '../../../../lib/dom/querySelectorOrFail';
 import type GmailDriver from '../../gmail-driver';
 import type GmailRouteProcessor from '../gmail-route-view/gmail-route-processor';
+import waitFor from '../../../../lib/wait-for';
+import { SelectorError } from '../../../../lib/dom/querySelectorOrFail';
+import isStreakAppId from '../../../../lib/isStreakAppId';
+import { extractDocumentHtmlAndCss } from '../../../../../common/extractDocumentHtmlAndCss';
 
 class GmailRouteView {
   _type: string;
@@ -371,18 +375,49 @@ class GmailRouteView {
     }
   }
 
-  _startMonitoringPreviewPaneForThread(previewPaneContainer: HTMLElement) {
-    const threadContainerTableElement = querySelector(
-      previewPaneContainer,
-      'table.Bs > tr',
-    );
-    const elementStream = makeElementChildStream(
-      threadContainerTableElement,
-    ).filter(
+  async _startMonitoringPreviewPaneForThread(
+    previewPaneContainer: HTMLElement,
+  ) {
+    let threadContainerElement;
+
+    const selector = 'table.Bs > tr';
+    const selector_2023_11_16 = '.ao8:has(.a98.iY), .ao9:has(.apa)';
+
+    try {
+      threadContainerElement = await waitFor(() => {
+        const threadContainerElement =
+          previewPaneContainer.querySelector<HTMLElement>(selector);
+
+        if (threadContainerElement) {
+          return threadContainerElement;
+        }
+
+        return previewPaneContainer.querySelector<HTMLElement>(
+          selector_2023_11_16,
+        );
+      }, 15_000);
+    } catch {
+      const selectorError = new SelectorError(
+        `${selector}, ${selector_2023_11_16}`,
+        {
+          cause: new Error("Thread container for preview pane wasn't found"),
+        },
+      );
+      if (isStreakAppId(this._driver.getAppId())) {
+        this._driver.getLogger().error(selectorError, {
+          html: extractDocumentHtmlAndCss(),
+        });
+      }
+
+      throw selectorError;
+    }
+
+    const elementStream = makeElementChildStream(threadContainerElement).filter(
       (event) =>
         !!event.el.querySelector('.if') ||
         !!event.el.querySelector('.PeIF1d') ||
-        !!event.el.querySelector('.a98.iY'),
+        !!event.el.querySelector('.a98.iY') ||
+        event.el.matches('.a98.iY'),
     );
 
     this._eventStream.plug(
